@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Title</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/css/bootstrap.min.css">
+</head>
+<body>
+
+<div id="app">
+    <div class="container">
+        <div class="col-lg-6 offset-lg-3" v-if="isShow">
+            <br>
+            <span class="alert float-left">Xona raqami: {{room_number}}</span>
+            <span class="alert float-right">Siz: {{user.name}}</span>
+            <span class="alert float-right">Raqibingiz: {{user2 !== null ? user2.name : ''}}</span>
+            <br><br><br>
+
+            <div class="info">
+                <div v-if="loadingCircle">
+                    <div id="wrapper">
+
+                        <div class="profile-main-loader">
+                            <div class="loader">
+                                <svg class="circular-loader" viewBox="25 25 50 50">
+                                    <circle class="loader-path" cx="50" cy="50" r="20" fill="none" stroke="#70c542"
+                                            stroke-width="2"/>
+                                </svg>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+                <div v-if="!loadingCircle">
+                    <div class="board">
+                        <div class="row" v-for="(row, rowindex) in displayData">
+                            <div class="col" v-for="(col,colindex) in row" v-on:click="move(rowindex,colindex)">
+                                <div class="text" v-bind:class="col">
+                                    {{ col }}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="turn" v-if="result === null"> Turn : {{turn}}</div>
+                    <div class="turn" v-if="result !== null"> Result : {{result}}</div>
+
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-6 offset-lg-3" v-if="isName">
+            <div class="form-group">
+                <label for="exampleInputEmail1">Ismingiz</label>
+                <input type="email" v-model="user.name" class="form-control" id="exampleInputEmail1"
+                       placeholder="Ismingiz...">
+            </div>
+            <button type="button" @click="nameInput" class="btn btn-primary">Jo'natish</button>
+        </div>
+        <div class="col-lg-6 offset-lg-3" v-if="isRoom">
+            <div class="form-group">
+                <label for="room_number">Xona raqami</label>
+                <input type="email" v-model="room_number" class="form-control" id="room_number"
+                       placeholder="Xona raqami">
+            </div>
+            <button type="button" @click="inputRoom" class="btn btn-primary">Jo'natish</button>
+
+            <hr>
+
+
+            <button type="button" @click="createRoom" class="btn btn-primary">Xona yaratish</button>
+
+        </div>
+    </div>
+</div>
+
+
+<script src="https://cdn.jsdelivr.net/npm/vue@2.6.14"></script>
+<script src="/socket.io/socket.io.js"></script>
+<script>
+    let socket = io();
+
+    new Vue({
+        el: '#app',
+        data: {
+            displayData: [
+                [null, null, null],
+                [null, null, null],
+                [null, null, null]
+            ],
+            isShow: false,
+            isName: true,
+            isRoom: false,
+            user: {name: null, id: Math.floor(Math.random() * 10000)},
+            user2: null,
+            loadingCircle: false,
+            room_number: null,
+            mode: 0, // 0 multiplayer 1 A.I
+            ttData: [],
+            turn: 'O',
+            result: null
+        },
+        created() {
+            socket.on('move', indexes => {
+                this.move(indexes.row, indexes.col)
+            })
+
+            socket.on('input_room', data => {
+                if (this.room_number == data.room_number) {
+                    console.log(`${data.user.name}- qo'shildi`)
+                    this.user2 = data.user
+                }
+            })
+
+            socket.on('user2_joined', data => {
+                if (this.user.id == data.user2.id) {
+                    this.user2 = data.user1
+                    this.isShow = true
+                    this.loadingCircle = false
+                    this.isRoom = false
+                }
+            })
+        },
+        methods: {
+            calculateAI: function () {
+
+            },
+            checkWin: function (_turn) {
+                // posibility menang
+                var winCondition = [
+                    [0, 1, 2], [3, 4, 5], [6, 7, 8],
+                    [0, 3, 6], [1, 4, 7], [2, 5, 8],
+                    [1, 4, 8], [2, 4, 6]
+                ]
+                let isWin = false
+                for (var i = 0; i < winCondition.length; i++) {
+                    let _indexVar = winCondition[i][0];
+                    let _charCheck = '';
+                    if (typeof this.ttData[_indexVar] == "undefined") {
+                        continue
+                    } else {
+                        _charCheck = this.ttData[_indexVar]
+                    }
+
+                    for (let n = 0; n < winCondition[i].length; n++) {
+                        let _data = this.ttData[winCondition[i][n]]
+
+                        if (typeof _data == "undefined") {
+                            break
+                        } else {
+                            if (_data == _charCheck) {
+                                if (n + 1 == winCondition[i].length) {
+                                    isWin = true
+                                    break
+                                }
+                            } else {
+                                break
+                            }
+                        }
+                    }
+                    if (isWin) {
+                        this.result = _turn + " Win"
+                        break
+                    }
+                }
+            },
+            move: function (row, col) {
+                let index = (row * 3) + col
+                if (typeof this.ttData[index] !== "undefined" || this.result !== null)
+                    return
+
+                let _turn = this.turn
+                this.ttData[index] = _turn
+                this.displayData[row][col] = _turn
+                socket.emit('move', {row: row, col: col})
+                if (_turn == 'O') {
+                    this.turn = "X"
+                } else {
+                    this.turn = "O"
+                }
+
+                this.checkWin(_turn)
+            },
+
+            nameInput() {
+                if (this.user.name.length !== 0) {
+                    this.isRoom = true
+                    this.isName = false
+                }
+            },
+            createRoom() {
+                this.room_number = Math.floor(Math.random() * 10000)
+                console.log(this.room_number)
+                this.isRoom = false
+                this.isShow = true
+                this.loadingCircle = true
+            },
+            inputRoom() {
+                if (this.room_number.length !== 0) {
+                    socket.emit('input_room', {room_number: this.room_number, user: this.user})
+                }
+            }
+
+        },
+        watch: {
+            user2() {
+                if (this.user2 !== null) {
+                    this.loadingCircle = false
+                    socket.emit('user2_joined', {user1: this.user, user2: this.user2})
+                } else {
+                    this.loadingCircle = true
+                }
+            }
+        }
+    })
+
+</script>
+
+
+<style>
+    html,body{
+        height:100%;
+    }
+
+    #wrapper{
+        position:relative;
+        /*background:#333;*/
+        height:100%;
+    }
+
+    .profile-main-loader{
+        left: 50% !important;
+        margin-left:-100px;
+        position: fixed !important;
+        top: 50% !important;
+        margin-top: -100px;
+        width: 45px;
+        z-index: 9000 !important;
+    }
+
+    .profile-main-loader .loader {
+        position: relative;
+        margin: 0px auto;
+        width: 200px;
+        height:200px;
+    }
+    .profile-main-loader .loader:before {
+        content: '';
+        display: block;
+        padding-top: 100%;
+    }
+
+    .circular-loader {
+        -webkit-animation: rotate 2s linear infinite;
+        animation: rotate 2s linear infinite;
+        height: 100%;
+        -webkit-transform-origin: center center;
+        -ms-transform-origin: center center;
+        transform-origin: center center;
+        width: 100%;
+        position: absolute;
+        top: 0;
+        left: 0;
+        margin: auto;
+    }
+
+    .loader-path {
+        stroke-dasharray: 150,200;
+        stroke-dashoffset: -10;
+        -webkit-animation: dash 1.5s ease-in-out infinite, color 6s ease-in-out infinite;
+        animation: dash 1.5s ease-in-out infinite, color 6s ease-in-out infinite;
+        stroke-linecap: round;
+    }
+
+    @-webkit-keyframes rotate {
+        100% {
+            -webkit-transform: rotate(360deg);
+            transform: rotate(360deg);
+        }
+    }
+
+    @keyframes rotate {
+        100% {
+            -webkit-transform: rotate(360deg);
+            transform: rotate(360deg);
+        }
+    }
+    @-webkit-keyframes dash {
+        0% {
+            stroke-dasharray: 1,200;
+            stroke-dashoffset: 0;
+        }
+        50% {
+            stroke-dasharray: 89,200;
+            stroke-dashoffset: -35;
+        }
+        100% {
+            stroke-dasharray: 89,200;
+            stroke-dashoffset: -124;
+        }
+    }
+    @keyframes dash {
+        0% {
+            stroke-dasharray: 1,200;
+            stroke-dashoffset: 0;
+        }
+        50% {
+            stroke-dasharray: 89,200;
+            stroke-dashoffset: -35;
+        }
+        100% {
+            stroke-dasharray: 89,200;
+            stroke-dashoffset: -124;
+        }
+    }
+    @-webkit-keyframes color {
+        0% {
+            stroke: #70c542;
+        }
+        40% {
+            stroke: #70c542;
+        }
+        66% {
+            stroke: #70c542;
+        }
+        80%, 90% {
+            stroke: #70c542;
+        }
+    }
+    @keyframes color {
+        0% {
+            stroke: #70c542;
+        }
+        40% {
+            stroke: #70c542;
+        }
+        66% {
+            stroke: #70c542;
+        }
+        80%, 90% {
+            stroke: #70c542;
+        }
+    }
+
+</style>
+<style>
+    .board .row .col {
+        width: 100px;
+        height: 100px;
+        border: 1px solid #ccc;
+        float: left;
+    }
+
+    .board .row .col .text {
+        text-align: center;
+        vertical-align: middle;
+        line-height: 100px;
+        font-size: 70px;
+    }
+
+    .board .row .col .X {
+        color: #ed4444;
+    }
+
+    .board .row .col .O {
+        color: #4469ed;
+    }
+
+    .board .row:after {
+        content: '';
+        display: block;
+        clear: both;
+    }
+
+</style>
+</body>
+</html>
